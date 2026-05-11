@@ -18,11 +18,41 @@ user/*
 !user/plugins/sample-page/
 !user/plugins/sample-plugin/
 !user/plugins/sample-toolbar/
+# ... CURLS custom plugins
+!user/plugins/Admin-reCaptcha/
+!user/plugins/antispam/
+!user/plugins/curls-donate-link/
+!user/plugins/dnsbl/
+!user/plugins/fallback-url/
+!user/plugins/force-lowercase/
+!user/plugins/google-safe-browsing/
+!user/plugins/httpBL/
+!user/plugins/key_char_len/
+!user/plugins/mass-remove/
+!user/plugins/mass-remove-links/
+!user/plugins/phishtank-2.0/
+!user/plugins/recaptcha-plugin/
+!user/plugins/sleeky-backend/
+!user/plugins/url-health-check/
+!user/plugins/yourls-advanced-reserved-urls/
+!user/plugins/yourls-api-mass-update/
+!user/plugins/yourls-check-url/
+!user/plugins/yourls-pseudonymize/
+!user/plugins/YourlsBlacklistIPs/
+# ... CURLS reserved words
+!user/reserved_words.php
 # ... example pages
 !user/pages/examplepage.php
 # ... and index.html files
 !user/index.html
 !user/**/index.html
+
+############
+## Frontend
+
+# Frontend secrets and build artifacts
+frontend/config.php
+frontend/node_modules/
 
 ############
 ## Tests
