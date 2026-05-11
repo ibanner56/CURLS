@@ -21,7 +21,6 @@ user/*
 # ... CURLS custom plugins
 !user/plugins/Admin-reCaptcha/
 !user/plugins/antispam/
-!user/plugins/curls-donate-link/
 !user/plugins/dnsbl/
 !user/plugins/fallback-url/
 !user/plugins/force-lowercase/
