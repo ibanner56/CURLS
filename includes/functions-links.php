@@ -164,7 +164,7 @@ function yourls_statlink( $keyword = '' ) {
  * @return string
  */
 function yourls_admin_url( $page = '' ) {
-    $admin = yourls_get_yourls_site() . '/admin/' . $page;
+    $admin = yourls_get_yourls_site() . '/caller/' . $page;
     if( yourls_is_ssl() or yourls_needs_ssl() ) {
         $admin = yourls_set_url_scheme( $admin, 'https' );
     }
