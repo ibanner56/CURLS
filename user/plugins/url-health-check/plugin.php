@@ -12,7 +12,11 @@ if( !defined( 'YOURLS_ABSPATH' ) ) die();
 yourls_add_filter('shunt_add_new_link', 'url_health_check');
 function url_health_check( $is, $url, $keyword = '' , $title = '') {
 
-	$return = false;
+	if ( $is !== yourls_shunt_default() ) {
+		return $is;
+	}
+
+	$return = [];
 
 	if ( ! yourls_get_protocol( $url ) )
 		$url = 'https://'.$url;
@@ -25,20 +29,21 @@ function url_health_check( $is, $url, $keyword = '' , $title = '') {
 		$return['statusCode'] = '400';
 	}
 
-	if ( $return == false && in_array( yourls_get_protocol( $url ), array( 'http://', 'https://' ) ) ) {
+	if ( $return === [] && in_array( yourls_get_protocol( $url ), array( 'http://', 'https://' ) ) ) {
 
 		$ch = curl_init($url);
 			curl_setopt($ch, CURLOPT_HEADER, false);
 			curl_setopt($ch, CURLOPT_NOBODY, true);
 			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+			curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
 			curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
 			curl_setopt($ch, CURLOPT_CONNECTTIMEOUT , 0); 
 			curl_setopt($ch, CURLOPT_TIMEOUT, 3); // TODO Is this reasonable?
 		$output = curl_exec($ch);
 		$httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		$finalURL = curl_getinfo($ch,CURLINFO_EFFECTIVE_URL );
-			curl_close($ch);
+			unset($ch);
 
 		// update url to redirection desstiantion if needed
 		if ( $finalURL !== $url ) {
@@ -56,7 +61,7 @@ function url_health_check( $is, $url, $keyword = '' , $title = '') {
 		}
 	}
 
-	return $return;
+	return $return === [] ? $is : $return;
 }
 
 function URLHC_redirection( $return, $old , $keyword, $title  ) {
