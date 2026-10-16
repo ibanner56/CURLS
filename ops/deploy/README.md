@@ -30,7 +30,9 @@ installation of the previous `curls` commit. A manual first run can supply the
 separately verified live-source commit through `bootstrap_baseline`.
 
 CI uses PHP 8.5, a digest-pinned MariaDB 11.8.6 container, and disposable test
-databases. It checks the vendored Composer platform without updating dependencies,
+databases. PHP-FPM comes from the pinned PHP setup action, not a second APT
+installation; its configuration is checked before installing Nginx.
+CI checks the vendored Composer platform without updating dependencies,
 the health-check plugin, upstream unit tests, official database upgrade,
 repeat-upgrade idempotency, schema downgrade rejection, data/configuration
 preservation, and frontend/caller/API/short-link behavior through Nginx/FPM.

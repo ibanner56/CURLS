@@ -57,8 +57,9 @@ jobs:
           coverage: none
       - name: Install isolated HTTP service dependencies
         run: |
+          sudo /usr/sbin/php-fpm8.5 --test
           sudo apt-get update -qq
-          sudo apt-get install -y -qq nginx php8.5-fpm
+          sudo apt-get install -y -qq nginx
           sudo systemctl stop nginx
       - name: Validate release and deployment logic
         run: |
