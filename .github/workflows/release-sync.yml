@@ -1,0 +1,150 @@
+name: Stable release synchronization
+
+on:
+  schedule:
+    - cron: '23 16 * * *'
+  workflow_dispatch:
+    inputs:
+      bootstrap_baseline:
+        description: 'Initial deployment only: full published commit matching the live code'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: curls-stable-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'ibanner56/CURLS' && github.ref == 'refs/heads/curls'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      changed: ${{ steps.prepare.outputs.changed }}
+      candidate: ${{ steps.prepare.outputs.candidate }}
+      baseline: ${{ steps.prepare.outputs.baseline }}
+      tag: ${{ steps.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: curls
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the production approval rule before synchronization
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/check_environment.py
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        id: app
+        with:
+          client-id: ${{ vars.CURLS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CURLS_APP_PRIVATE_KEY }}
+          repositories: CURLS
+          permission-contents: write
+          permission-workflows: write
+      - name: Mirror stable tag and prepare candidate
+        id: prepare
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BOOTSTRAP_BASELINE: ${{ inputs.bootstrap_baseline }}
+        run: python3 .github/scripts/sync_release.py prepare
+
+  validate:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    uses: ./.github/workflows/curls-ci.yml
+    with:
+      candidate: ${{ needs.prepare.outputs.candidate }}
+      baseline: ${{ needs.prepare.outputs.baseline }}
+
+  promote:
+    needs: [prepare, validate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        id: app
+        with:
+          client-id: ${{ vars.CURLS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CURLS_APP_PRIVATE_KEY }}
+          repositories: CURLS
+          permission-contents: write
+      - name: Fast-forward curls to the tested candidate
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+        run: python3 .github/scripts/sync_release.py promote --candidate "$CANDIDATE"
+
+  deploy:
+    name: Approve YOURLS ${{ needs.prepare.outputs.tag }} (${{ needs.prepare.outputs.candidate }})
+    needs: [prepare, validate, promote]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: satsuma-production
+      url: https://contra.dance
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.validate.outputs.artifact-id }}
+          merge-multiple: true
+          path: approved-artifact
+      - name: Reject superseded approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          [[ "$(gh api repos/ibanner56/CURLS/git/ref/heads/curls --jq .object.sha)" == "$CANDIDATE" ]]
+          python3 .github/scripts/check_environment.py
+      - name: Push the same tested archive
+        env:
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+          BASELINE: ${{ needs.prepare.outputs.baseline }}
+          DIGEST: ${{ needs.validate.outputs.archive-digest }}
+          SATSUMA_HOST: ${{ vars.SATSUMA_HOST }}
+          SATSUMA_SSH_KEY: ${{ secrets.SATSUMA_SSH_KEY }}
+          SATSUMA_KNOWN_HOSTS: ${{ secrets.SATSUMA_KNOWN_HOSTS }}
+        run: |
+          python3 .github/scripts/push_artifact.py approved-artifact/release.tar.gz \
+            "$CANDIDATE" "$DIGEST" "$BASELINE"
+
+  report:
+    needs: [prepare, validate, promote, deploy]
+    if: always() && contains(needs.*.result, 'failure')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        id: app
+        with:
+          client-id: ${{ vars.CURLS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CURLS_APP_PRIVATE_KEY }}
+          repositories: CURLS
+          permission-issues: write
+      - name: Notify the owner with the failed run
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: python3 .github/scripts/sync_release.py report

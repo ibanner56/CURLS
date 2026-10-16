@@ -1,0 +1,112 @@
+name: CURLS deployability
+
+on:
+  pull_request:
+    branches: [curls]
+  workflow_call:
+    inputs:
+      candidate:
+        type: string
+        required: true
+      baseline:
+        type: string
+        required: true
+    outputs:
+      artifact-id:
+        value: ${{ jobs.test.outputs.artifact-id }}
+      archive-digest:
+        value: ${{ jobs.test.outputs.archive-digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      archive-digest: ${{ steps.build.outputs.digest }}
+    services:
+      database:
+        image: mariadb:11.8.6@sha256:78a5047d3ba33975f183f183c2464cc7f1eab13ec8667e57cc9a5821d6da7577
+        env:
+          MARIADB_ROOT_PASSWORD: curls-isolated-ci-only
+        ports:
+          - 127.0.0.1:3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      DB_PORT: '3306'
+      CURLS_CI_ROOT_PASSWORD: curls-isolated-ci-only
+      CANDIDATE: ${{ inputs.candidate || github.sha }}
+      BASELINE: ${{ inputs.baseline || github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.candidate || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.5'
+          extensions: mbstring, curl, zip, dom, simplexml, intl, pdo_mysql
+          tools: composer, phpunit:13.4.3
+          coverage: none
+      - name: Install isolated HTTP service dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nginx php8.5-fpm
+          sudo systemctl stop nginx
+      - name: Validate release and deployment logic
+        run: |
+          python3 -m unittest discover -s tests/automation -v
+          composer --no-plugins --no-scripts validate --strict
+          composer --no-plugins --no-scripts check-platform-reqs --lock
+          php -l ops/deploy/application.php
+          php -l tests/automation/ci_database.php
+          php -l tests/automation/seed.php
+          php -l tests/automation/schema_fixture.php
+          phpunit --no-configuration \
+            --bootstrap tests/includes/url-health-check-bootstrap.php \
+            --fail-on-all-issues tests/tests/plugins/URLHealthCheckTest.php
+      - name: Build once from the exact candidate commit
+        id: build
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE" ]]
+          DIGEST="$(python3 .github/scripts/build_artifact.py "$CANDIDATE" "$RUNNER_TEMP/release.tar.gz")"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+      - name: Prepare isolated test databases and core-test configuration
+        run: |
+          set -euo pipefail
+          PASSWORD="$(openssl rand -hex 32)"
+          echo "::add-mask::$PASSWORD"
+          echo "CURLS_CI_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
+          export CURLS_CI_PASSWORD="$PASSWORD"
+          php tests/automation/ci_database.php
+          python3 tests/automation/unit_config.py
+          git clone --quiet --no-checkout https://github.com/ozh/YOURLS-fr_FR.git "$RUNNER_TEMP/translation"
+          git -C "$RUNNER_TEMP/translation" checkout --quiet ab40e01d58a2c03f9b490f1b23b14e7806ec86ed
+          cp "$RUNNER_TEMP/translation/fr_FR.mo" "$RUNNER_TEMP/translation/fr_FR.po" user/languages/
+      - name: Run upstream unit suite on its own empty test database
+        run: |
+          phpunit --configuration phpunit.xml.dist \
+            --exclude-group network --fail-on-all-issues
+      - name: Upgrade synthetic baseline and test the built archive through Nginx/FPM
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASELINE"
+          python3 tests/automation/integration.py "$RUNNER_TEMP/release.tar.gz" \
+            "$CANDIDATE" "$DIGEST" "$BASELINE"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: upload
+        with:
+          name: curls-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.CANDIDATE }}
+          path: ${{ runner.temp }}/release.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
