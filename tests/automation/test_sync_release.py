@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,69 @@ SPEC = importlib.util.spec_from_file_location(
 )
 sync = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(sync)
+
+
+class ReleaseStartupTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        scripts = self.root / ".github/scripts"
+        scripts.mkdir(parents=True)
+        for name in ("sync_release.py", "release.py"):
+            shutil.copyfile(ROOT / ".github/scripts" / name, scripts / name)
+        (self.root / ".github/upstream-release.json").write_text(json.dumps({
+            "tag": "1.10.6", "commit": "a" * 40,
+        }))
+        self.git("init", "-q")
+        self.git("config", "core.autocrlf", "false")
+        self.git("add", ".")
+        self.git("-c", "user.name=Release test", "-c",
+                 "user.email=release@example.test", "commit", "-qm", "baseline")
+        self.base = self.git("rev-parse", "HEAD")
+
+    def git(self, *args):
+        return subprocess.check_output(
+            ["git", "-C", str(self.root), *args], text=True
+        ).strip()
+
+    def prepare(self):
+        environment = os.environ.copy()
+        environment.pop("PYTHONDONTWRITEBYTECODE", None)
+        environment.pop("PYTHONPYCACHEPREFIX", None)
+        return subprocess.run(
+            [sys.executable, "-c", """
+import runpy
+import sys
+from pathlib import Path
+script = Path(sys.argv[1])
+sys.path.insert(0, str(script.parent))
+module = runpy.run_path(str(script))
+print(module["prepare_candidate"](script.parents[2], "1.10.6", "a" * 40))
+""", str(self.root / ".github/scripts/sync_release.py")],
+            env=environment, capture_output=True, text=True,
+        )
+
+    def test_startup_preserves_clean_checkout_for_candidate_preparation(self):
+        result = self.prepare()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(self.base, result.stdout.strip())
+        self.assertEqual("", self.git("status", "--porcelain"))
+
+    def test_startup_does_not_hide_untracked_or_tracked_changes(self):
+        for relative in ("unexpected.txt", ".github/upstream-release.json"):
+            with self.subTest(path=relative):
+                path = self.root / relative
+                original = path.read_text() if path.exists() else None
+                path.write_text((original or "") + "\n")
+                result = self.prepare()
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("Candidate workspace must be clean", result.stderr)
+                self.assertEqual(self.base, self.git("rev-parse", "HEAD"))
+                if original is None:
+                    path.unlink()
+                else:
+                    path.write_text(original)
 
 
 class ReleaseOrchestrationTests(unittest.TestCase):

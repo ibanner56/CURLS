@@ -63,6 +63,10 @@ Promotion requests only Contents write; it cannot change workflows. Environment
 validation uses the workflow-provided token with job-level Actions read, not an
 additional permission on the App.
 
+Enable repository **Issues** before the first run. Failure notification creates
+an owner-mentioned issue or comments on the existing notification issue; App
+permission alone cannot enable this repository feature.
+
 Set repository variable `CURLS_APP_CLIENT_ID` and repository secret
 `CURLS_APP_PRIVATE_KEY`. Put the private key directly into GitHub from a trusted
 workstation; do not store it on Satsuma. Each job mints only its needed short-lived

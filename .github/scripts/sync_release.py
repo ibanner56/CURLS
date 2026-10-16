@@ -6,6 +6,10 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
+
+# Local imports must not dirty the checkout checked by prepare_candidate.
+sys.dont_write_bytecode = True
 
 from release import (
     SHA, check_automation_transition, check_transition, git, prepare_candidate,
