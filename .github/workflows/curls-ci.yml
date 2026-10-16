@@ -95,8 +95,14 @@ jobs:
           cp "$RUNNER_TEMP/translation/fr_FR.mo" "$RUNNER_TEMP/translation/fr_FR.po" user/languages/
       - name: Run upstream unit suite on its own empty test database
         run: |
+          set -euo pipefail
           phpunit --configuration phpunit.xml \
-            --exclude-group network --fail-on-all-issues
+            --exclude-group network --log-junit "$RUNNER_TEMP/upstream-unit.xml" \
+            --fail-on-deprecation --fail-on-phpunit-deprecation \
+            --fail-on-phpunit-notice --fail-on-phpunit-warning \
+            --fail-on-empty-test-suite --fail-on-incomplete \
+            --fail-on-notice --fail-on-risky --fail-on-warning
+          python3 -B .github/scripts/check_unit_results.py "$RUNNER_TEMP/upstream-unit.xml"
       - name: Upgrade synthetic baseline and test the built archive through Nginx/FPM
         env:
           DIGEST: ${{ steps.build.outputs.digest }}

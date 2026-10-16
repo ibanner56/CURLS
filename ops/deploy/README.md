@@ -45,6 +45,14 @@ from the upstream configuration, replaces the deprecated result-cache setting,
 and collects all failures rather than stopping at the first one. Warnings,
 deprecations, and failures still fail the job; upstream tests remain unchanged.
 
+The upstream suite may skip only `ThemesTest::test_get_themes` and
+`ThemesTest::test_theme_activate`, which require an unavailable upstream theme
+function. A JUnit-report gate rejects any other skip, duplicate allowed skip,
+empty/missing report, or reported failure/error. PHPUnit separately fails on
+warnings, notices, deprecations, risky/incomplete tests, and an empty suite.
+The theme tests are not excluded: they run normally if a future release supplies
+the required function.
+
 The synthetic HTTP installation enables URL Health Check, Allow Hyphens, and
 Force Lowercase. This is not a claim that every production plugin configuration
 has been reproduced. Production additionally checks the actual activated-plugin
