@@ -39,6 +39,11 @@ preservation, and frontend/caller/API/short-link behavior through Nginx/FPM.
 The known 506-to-507 index migration is exercised while the target schema is 507.
 Production data and credentials are never CI fixtures.
 
+The synthetic installer and deployment checks use fast application initialization
+to avoid normal request handling and plugin loading. Both explicitly initialize
+YOURLS's sanitizers before installation or upgrade work; fast initialization skips
+the hook that normally populates the allowed protocols and HTML entities.
+
 CI disables PHP's lazy superglobal initialization so PHPUnit's XML request
 fixtures survive loading the login tests. It generates an ignored `phpunit.xml`
 from the upstream configuration, replaces the deprecated result-cache setting,

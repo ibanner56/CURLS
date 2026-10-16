@@ -19,6 +19,8 @@ require YOURLS_ABSPATH . '/includes/load-yourls.php';
 if ( YOURLS_DB_NAME !== 'curls_upgrade' || YOURLS_DB_USER !== 'curls_ci' ) {
     throw new RuntimeException( 'Refusing a non-fixture database.' );
 }
+// Fast init skips the plugins_loaded hook that normally initializes sanitizers.
+yourls_kses_init();
 $result = yourls_create_sql_tables();
 if ( $result['error'] ) {
     throw new RuntimeException( 'Synthetic installation returned errors.' );

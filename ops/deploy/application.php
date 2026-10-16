@@ -26,6 +26,8 @@ define( 'YOURLS_UPGRADING', true );
 $_SERVER['HTTP_HOST'] = 'contra.dance';
 $_SERVER['REQUEST_URI'] = '/';
 require $root . '/includes/load-yourls.php';
+// Fast init skips the plugins_loaded hook that normally initializes sanitizers.
+yourls_kses_init();
 yourls_get_all_options();
 
 function release_snapshot(): array {
