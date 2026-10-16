@@ -20,8 +20,18 @@ def main():
         if source.count(old) != 1:
             raise ValueError("Upstream test configuration changed; review the fixture")
         source = source.replace(old, new)
+    configuration = Path("phpunit.xml.dist").read_text()
+    for old, new in [
+        ('cacheResult="true"', 'recordTestRunHistory="true"'),
+        ('stopOnFailure="true"', 'stopOnFailure="false"'),
+    ]:
+        if configuration.count(old) != 1:
+            raise ValueError("Upstream PHPUnit configuration changed; review the fixture")
+        configuration = configuration.replace(old, new)
     with Path("user/config.php").open("x", encoding="utf-8") as stream:
         stream.write(source)
+    with Path("phpunit.xml").open("x", encoding="utf-8") as stream:
+        stream.write(configuration)
 
 
 if __name__ == "__main__":

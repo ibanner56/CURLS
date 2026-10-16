@@ -39,6 +39,12 @@ preservation, and frontend/caller/API/short-link behavior through Nginx/FPM.
 The known 506-to-507 index migration is exercised while the target schema is 507.
 Production data and credentials are never CI fixtures.
 
+CI disables PHP's lazy superglobal initialization so PHPUnit's XML request
+fixtures survive loading the login tests. It generates an ignored `phpunit.xml`
+from the upstream configuration, replaces the deprecated result-cache setting,
+and collects all failures rather than stopping at the first one. Warnings,
+deprecations, and failures still fail the job; upstream tests remain unchanged.
+
 The synthetic HTTP installation enables URL Health Check, Allow Hyphens, and
 Force Lowercase. This is not a claim that every production plugin configuration
 has been reproduced. Production additionally checks the actual activated-plugin
