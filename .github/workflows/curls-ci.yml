@@ -1,3 +1,4 @@
+# Stable-release workflow refreshed after initial Actions enablement.
 name: CURLS deployability
 
 on:
