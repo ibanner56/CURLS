@@ -1,6 +1,8 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -12,6 +14,41 @@ SPEC = importlib.util.spec_from_file_location(
 )
 integration = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(integration)
+
+
+class IntegrationConfigurationTests(unittest.TestCase):
+    def test_generated_config_loads_before_or_after_core_root_is_defined(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ("user", "frontend", "elsewhere"):
+                (root / name).mkdir()
+            (root / "frontend/config-sample.php").write_text("<?php\n", encoding="utf-8")
+            (root / "user/reserved_words.php").write_text(
+                "<?php\n$yourls_reserved_URL = ['fixture-reserved'];\n", encoding="utf-8"
+            )
+            with mock.patch.dict(os.environ, {
+                "CURLS_CI_PASSWORD": "a" * 64, "DB_PORT": "3306",
+            }):
+                integration.config(root)
+            script = """
+if ($argv[2] === 'cli') {
+    define('YOURLS_ABSPATH', $argv[1]);
+}
+require $argv[1] . '/user/config.php';
+echo json_encode([$yourls_reserved_URL, defined('YOURLS_ABSPATH')]);
+"""
+            for mode in ("web", "cli"):
+                with self.subTest(mode=mode):
+                    result = subprocess.run(
+                        ["php", "-n", "-d", "display_errors=stderr", "-r",
+                         script, str(root), mode],
+                        cwd=root / "elsewhere", text=True, capture_output=True,
+                    )
+                    self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                    self.assertEqual("", result.stderr)
+                    self.assertEqual(
+                        [["fixture-reserved"], mode == "cli"], json.loads(result.stdout)
+                    )
 
 
 class IntegrationWorkspaceTests(unittest.TestCase):

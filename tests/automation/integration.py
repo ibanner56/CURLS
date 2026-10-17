@@ -44,7 +44,7 @@ define('YOURLS_PRIVATE', true);
 define('YOURLS_DEBUG', false);
 define('YOURLS_FLOOD_DELAY_SECONDS', 0);
 $yourls_user_passwords = ['curls-ci' => '{secrets.token_hex(24)}'];
-require YOURLS_ABSPATH . '/user/reserved_words.php';
+require __DIR__ . '/reserved_words.php';
 """
     (root / "user/config.php").write_text(text, encoding="utf-8")
     shutil.copyfile(root / "frontend/config-sample.php", root / "frontend/config.php")
