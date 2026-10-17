@@ -166,6 +166,11 @@ database. Review the empty include, `nginx -t`, `sshd -t`, forced-command status
 output, rejection of arbitrary SSH commands, and the existing public/private
 HTTP checks before the first deployment.
 
+The installer keeps a private `0077` umask and explicitly sets the root-owned
+SSH home and `.ssh` directory to `0755`, and the root:`www-data` release parent
+to `0750`. The service accounts need traversal without write access; `mkdir`
+modes alone would be masked to `0700` and block authentication or serving.
+
 There is no server Git fetch, GitHub polling, push, or workflow trigger afterward.
 Changes to the root-owned deployment helpers require a separate approved
 operator installation; an application artifact cannot replace those helpers.

@@ -75,12 +75,15 @@ def install(public_key, baseline):
     ]:
         path.mkdir(mode=0o700)
     Path("/srv/contra-releases").mkdir(mode=0o750)
+    Path("/srv/contra-releases").chmod(0o750)
     shutil.chown("/srv/contra-releases", user="root", group="www-data")
     home = Path("/var/lib/curls-deploy/ssh-home")
     home.mkdir(mode=0o755)
+    home.chmod(0o755)
     # sshd can read root-owned keys before changing UID; no deployment user can
     # modify its home, forced command, sudo rule, or application release files.
     (home / ".ssh").mkdir(mode=0o755)
+    (home / ".ssh").chmod(0o755)
     run("/usr/sbin/useradd", "--system", "--user-group",
         "--home-dir", str(home), "--shell", "/bin/sh", "curls-deploy")
     # The containing directory is traversable, but state/logs/helpers stay private.
