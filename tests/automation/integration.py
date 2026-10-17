@@ -57,6 +57,15 @@ def application(root, command):
     return json.loads(run(*args))
 
 
+def verify_http_configuration(root, original):
+    for name, expected in original.items():
+        digest = run(
+            "sudo", "-u", "www-data", "--", "sha256sum", "--", str(root / name),
+        ).split()[0]
+        if digest != expected:
+            raise ValueError("HTTP authentication changed private configuration")
+
+
 @contextmanager
 def workspace():
     # Do not depend on the service account being able to traverse the runner home.
@@ -232,9 +241,7 @@ http {{
             status, _, headers = request("/ci-created")
             if status != 301 or headers.get("Location") != "https://example.com/":
                 raise ValueError("Lowercase plugin/new-link redirect failed")
-            for name, expected in original.items():
-                if hashlib.sha256((candidate / name).read_bytes()).hexdigest() != expected:
-                    raise ValueError("HTTP authentication changed private configuration")
+            verify_http_configuration(candidate, original)
         except Exception:
             # Only this synthetic server's errors; no response bodies or configs.
             diagnostic = subprocess.run(

@@ -44,6 +44,8 @@ runner's home. Its candidate is root-owned and web-readable during checks;
 the private probe runs as `www-data`. Teardown restores runner ownership before
 removing the disposable tree, including on failure. Its generated configuration
 loads reserved keywords relative to itself, before core path constants exist.
+Final configuration-preservation checks compute hashes as the web account,
+without relaxing candidate permissions or printing configuration contents.
 
 The synthetic installer and deployment checks use fast application initialization
 to avoid normal request handling and plugin loading. Both explicitly initialize

@@ -51,6 +51,34 @@ echo json_encode([$yourls_reserved_URL, defined('YOURLS_ABSPATH')]);
                     )
 
 
+class IntegrationPreservationTests(unittest.TestCase):
+    def test_checks_every_config_as_web_account_without_runner_read_access(self):
+        root = Path("fixture") / "candidate"
+        original = {"user/config.php": "a" * 64, "frontend/config.php": "b" * 64}
+        with mock.patch.object(Path, "read_bytes", side_effect=PermissionError), \
+             mock.patch.object(integration, "run", side_effect=[
+                 f"{digest}  {root / name}" for name, digest in original.items()
+             ]) as run:
+            integration.verify_http_configuration(root, original)
+            self.assertEqual(
+                [mock.call("sudo", "-u", "www-data", "--", "sha256sum", "--",
+                           str(root / name)) for name in original],
+                run.call_args_list,
+            )
+
+    def test_changed_config_or_failed_checksum_cannot_pass_preservation(self):
+        root = Path("fixture") / "candidate"
+        original = {"user/config.php": "a" * 64}
+        with mock.patch.object(integration, "run", return_value="b" * 64):
+            with self.assertRaisesRegex(ValueError, "changed private configuration"):
+                integration.verify_http_configuration(root, original)
+        with mock.patch.object(
+            integration, "run", side_effect=subprocess.CalledProcessError(1, ["sha256sum"]),
+        ):
+            with self.assertRaises(subprocess.CalledProcessError):
+                integration.verify_http_configuration(root, original)
+
+
 class IntegrationWorkspaceTests(unittest.TestCase):
     def test_restores_candidate_owner_before_cleanup_on_success_and_failure(self):
         for fail in (False, True):
