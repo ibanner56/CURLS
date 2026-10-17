@@ -1,6 +1,7 @@
 """Hosted-CI-only synthetic upgrade and Nginx/FPM application checks."""
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -50,9 +51,29 @@ require YOURLS_ABSPATH . '/user/reserved_words.php';
 
 
 def application(root, command):
-    return json.loads(run(
-        "php", str(ROOT / "ops/deploy/application.php"), str(root), command,
-    ))
+    args = ["php", str(root.parent / "application.php"), str(root), command]
+    if command == "probe":
+        args = ["sudo", "-u", "www-data", "--", *args]
+    return json.loads(run(*args))
+
+
+@contextmanager
+def workspace():
+    # Do not depend on the service account being able to traverse the runner home.
+    with tempfile.TemporaryDirectory(prefix="curls-http-", dir="/tmp") as temporary:
+        work = Path(temporary)
+        work.chmod(0o755)
+        helper = work / "application.php"
+        shutil.copyfile(ROOT / "ops/deploy/application.php", helper)
+        helper.chmod(0o644)
+        owner = f"{os.getuid()}:{os.getgid()}"
+        try:
+            yield work
+        finally:
+            candidate = work / "candidate"
+            if candidate.exists():
+                # Restore the disposable tree before unprivileged tempfile cleanup.
+                run("sudo", "chown", "-R", owner, "--", str(candidate))
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -78,9 +99,7 @@ def main(archive, commit, digest, baseline):
         raise ValueError("Integration is restricted to disposable GitHub-hosted CI")
     if not artifact.SHA.fullmatch(baseline):
         raise ValueError("Invalid upgrade baseline")
-    with tempfile.TemporaryDirectory(dir=os.environ["RUNNER_TEMP"]) as temporary:
-        work = Path(temporary)
-        work.chmod(0o755)
+    with workspace() as work:
         old = work / "baseline"
         old.mkdir()
         raw = work / "baseline.tar"
@@ -97,7 +116,7 @@ def main(archive, commit, digest, baseline):
                 with source.extractfile(member) as data, target.open("xb") as stream:
                     shutil.copyfileobj(data, stream)
         config(old)
-        print(run("php", str(ROOT / "tests/automation/seed.php"), str(old)))
+        print(run("php", str(ROOT / "tests/automation/seed.php"), str(old)), flush=True)
         before = application(old, "inspect")
         candidate = work / "candidate"
         manifest = artifact.extract(archive, candidate, commit, digest)
@@ -136,6 +155,8 @@ def main(archive, commit, digest, baseline):
                 raise ValueError("Upgrade changed private configuration")
 
         run("sudo", "chown", "-R", "root:www-data", str(candidate))
+        for path in (candidate / "index.php", candidate / "user/config.php"):
+            run("sudo", "-u", "www-data", "--", "test", "-r", str(path))
         nginx = work / "nginx.conf"
         nginx.write_text(f"""
 user www-data;
@@ -181,7 +202,10 @@ http {{
                     break
                 time.sleep(0.5)
             else:
-                raise ValueError("Frontend failed through Nginx/FPM")
+                raise ValueError(
+                    f"Frontend failed through Nginx/FPM: HTTP {status}, "
+                    f"form marker present: {'shortenlink' in body}"
+                )
             status, body, _ = request("/caller/")
             if status != 200 or "password" not in body:
                 raise ValueError("Caller login form missing")
@@ -211,6 +235,16 @@ http {{
             for name, expected in original.items():
                 if hashlib.sha256((candidate / name).read_bytes()).hexdigest() != expected:
                     raise ValueError("HTTP authentication changed private configuration")
+        except Exception:
+            # Only this synthetic server's errors; no response bodies or configs.
+            diagnostic = subprocess.run(
+                ["sudo", "tail", "-n", "40", str(work / "nginx-error.log")],
+                check=False,
+            )
+            if diagnostic.returncode != 0:
+                print("Could not read the synthetic Nginx error log.",
+                      file=sys.stderr, flush=True)
+            raise
         finally:
             run("sudo", "nginx", "-s", "quit", "-c", str(nginx))
         print("Synthetic baseline upgrade, redeploy, data/config preservation and HTTP checks passed.")

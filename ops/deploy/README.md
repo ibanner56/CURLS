@@ -39,6 +39,11 @@ preservation, and frontend/caller/API/short-link behavior through Nginx/FPM.
 The known 506-to-507 index migration is exercised while the target schema is 507.
 Production data and credentials are never CI fixtures.
 
+The HTTP fixture lives under `/tmp` so the web account need not traverse the
+runner's home. Its candidate is root-owned and web-readable during checks;
+the private probe runs as `www-data`. Teardown restores runner ownership before
+removing the disposable tree, including on failure.
+
 The synthetic installer and deployment checks use fast application initialization
 to avoid normal request handling and plugin loading. Both explicitly initialize
 YOURLS's sanitizers before installation or upgrade work; fast initialization skips
