@@ -112,7 +112,12 @@ if ( $argv[2] === 'probe' ) {
         }
         if ( $path === '/yourls-api.php' ) {
             $response = json_decode( $body, true, flags: JSON_THROW_ON_ERROR );
-            if ( ( $response['status'] ?? null ) !== 'success' ) {
+            if ( !is_array( $response ) ||
+                ( $response['message'] ?? null ) !== 'success' ||
+                ( $response['statusCode'] ?? null ) !== '200' ||
+                isset( $response['errorCode'] ) ||
+                !is_array( $response['stats'] ?? null ) ||
+                ( $response['stats']['total_links'] ?? null ) !== $after['links'] ) {
                 throw new RuntimeException( 'Signed read-only API probe failed.' );
             }
         }

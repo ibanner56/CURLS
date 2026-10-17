@@ -1,9 +1,13 @@
+import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 import unittest
+from urllib.parse import parse_qs
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -101,6 +105,76 @@ class ApplicationBootstrapTests(unittest.TestCase):
                      "plugins": ["fixture/plugin.php"]},
                     result,
                 )
+
+    def test_signed_probe_accepts_stats_contract_and_rejects_invalid_responses(self):
+        posts = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                body = b"password" if self.path == "/caller/" else b"shortenlink"
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_POST(self):
+                posts.append(parse_qs(
+                    self.rfile.read(int(self.headers["Content-Length"])).decode()
+                ))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(response_body)
+
+        with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+            site = f"http://127.0.0.1:{server.server_port}"
+            with (self.root / "includes/load-yourls.php").open("a", encoding="utf-8") as stream:
+                stream.write("""
+define('YOURLS_SITE', getenv('CURLS_TEST_SITE'));
+$yourls_user_passwords = ['fixture' => 'fixture-password'];
+function yourls_auth_signature($username = false) { return 'fixture-signature'; }
+""")
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            valid = {
+                "message": "success", "statusCode": "200",
+                "stats": {"total_links": 1, "total_clicks": 0},
+            }
+            try:
+                for response, success in [
+                    (valid, True),
+                    ({"errorCode": "403", "message": "Forbidden"}, False),
+                    ({"status": "success"}, False),
+                    ({**valid, "stats": {"total_links": 2}}, False),
+                    ("not JSON", False),
+                ]:
+                    with self.subTest(response=response):
+                        response_body = (
+                            response if isinstance(response, str) else json.dumps(response)
+                        ).encode()
+                        posts.clear()
+                        result = subprocess.run(
+                            ["php", str(ROOT / "ops/deploy/application.php"),
+                             str(self.root), "probe"],
+                            env={**os.environ, "CURLS_TEST_SOURCE": str(ROOT),
+                                 "CURLS_TEST_SITE": site},
+                            text=True, capture_output=True,
+                        )
+                        self.assertEqual(success, result.returncode == 0,
+                                         result.stdout + result.stderr)
+                        self.assertEqual(1, len(posts))
+                        self.assertEqual(["stats"], posts[0]["action"])
+                        self.assertEqual(["sha256"], posts[0]["hash"])
+                        self.assertEqual(
+                            [hashlib.sha256(
+                                (posts[0]["timestamp"][0] + "fixture-signature").encode()
+                            ).hexdigest()],
+                            posts[0]["signature"],
+                        )
+            finally:
+                server.shutdown()
+                thread.join()
 
 
 if __name__ == "__main__":

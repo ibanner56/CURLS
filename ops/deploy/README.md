@@ -192,7 +192,9 @@ The official upgrade runs as `www-data`. A completion guard treats an internal
 `die()` as failure even if PHP would otherwise exit zero. The helper verifies
 target schema/version and preserved populations/plugin activation, starts FPM
 behind public maintenance, and probes the private frontend, caller login, and
-signed read-only API. It records the active commit/digest before reopening.
+signed read-only API. The stats response must report `message: success`,
+`statusCode: "200"`, and the same link count as the deployment snapshot.
+It records the active commit/digest before reopening.
 The private Nginx vhost listens on `127.0.0.1:443`; the public vhost listens on
 `172.16.0.4:443`. Only the public vhost includes the deployment maintenance rule.
 The probe keeps the real host name and TLS verification but resolves it to
